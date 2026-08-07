@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -21,15 +22,32 @@ class CornerMaskService : Service() {
 
     private lateinit var wm: WindowManager
     private val overlayViews = mutableListOf<View>()
+    private var showing = false
 
     override fun onCreate() {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         startForegroundNotification()
-        addOverlays()
+        refreshForOrientation()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        refreshForOrientation()
+    }
+
+    private fun refreshForOrientation() {
+        val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        if (isLandscape && !showing) {
+            addOverlays()
+            showing = true
+        } else if (!isLandscape && showing) {
+            removeOverlays()
+            showing = false
+        }
+    }
 
     private fun startForegroundNotification() {
         val channelId = "corner_mask_channel"
@@ -82,11 +100,15 @@ class CornerMaskService : Service() {
         }
     }
 
-    override fun onDestroy() {
+    private fun removeOverlays() {
         for (v in overlayViews) {
             try { wm.removeView(v) } catch (e: Exception) { }
         }
         overlayViews.clear()
+    }
+
+    override fun onDestroy() {
+        removeOverlays()
         super.onDestroy()
     }
 
