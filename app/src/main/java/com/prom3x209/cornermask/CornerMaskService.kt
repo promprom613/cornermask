@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -26,10 +27,15 @@ class CornerMaskService : Service() {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         startForegroundNotification()
-        addOverlays()
+        showForCurrentOrientation()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        showForCurrentOrientation()
+    }
 
     private fun startForegroundNotification() {
         val channelId = "corner_mask_channel"
@@ -58,17 +64,20 @@ class CornerMaskService : Service() {
         startForeground(1, notification)
     }
 
-    private fun addOverlays() {
+    private fun showForCurrentOrientation() {
+        removeOverlays()
+
+        val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val corners = if (isLandscape) {
+            listOf(0 to (Gravity.TOP or Gravity.START), 2 to (Gravity.BOTTOM or Gravity.START))
+        } else {
+            listOf(0 to (Gravity.TOP or Gravity.START), 1 to (Gravity.TOP or Gravity.END))
+        }
+
         val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-
         val type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-
-        val corners = listOf(
-            0 to (Gravity.TOP or Gravity.START),
-            1 to (Gravity.BOTTOM or Gravity.START)
-        )
 
         for ((cornerId, gravity) in corners) {
             val view = CornerMaskView(this, cornerId, RADIUS_PX)
