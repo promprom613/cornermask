@@ -20,7 +20,7 @@ class CornerMaskService : Service() {
 
     companion object {
         const val RADIUS_PX = 108
-        const val STRIPS = 16
+        const val STRIPS = 54
     }
 
     private lateinit var wm: WindowManager
