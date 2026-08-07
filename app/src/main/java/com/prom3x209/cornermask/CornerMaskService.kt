@@ -1,116 +1,30 @@
 package com.prom3x209.cornermask
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
-import android.content.Intent
-import android.content.res.Configuration
-import android.graphics.PixelFormat
-import android.os.Build
-import android.os.IBinder
-import android.view.Gravity
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import android.view.View
-import android.view.WindowManager
 
-class CornerMaskService : Service() {
+class CornerMaskView(context: Context, private val corner: Int, private val radiusPx: Int) : View(context) {
 
-    companion object {
-        const val RADIUS_PX = 108
+    private val blackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+
+    init {
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+        setBackgroundColor(Color.TRANSPARENT)
     }
 
-    private lateinit var wm: WindowManager
-    private val overlayViews = mutableListOf<View>()
-    private var showing = false
+    override fun onDraw(canvas: Canvas) {
+        val r = radiusPx.toFloat()
+        val h = height.toFloat()
+        val cy = if (corner == 0) r else h - r
 
-    override fun onCreate() {
-        super.onCreate()
-        wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        startForegroundNotification()
-        refreshForOrientation()
+        val fullSquare = Path().apply { addRect(0f, 0f, r, h, Path.Direction.CW) }
+        val circle = Path().apply { addCircle(r, cy, r, Path.Direction.CW) }
+        fullSquare.op(circle, Path.Op.DIFFERENCE)
+
+        canvas.drawPath(fullSquare, blackPaint)
     }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
-
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        refreshForOrientation()
-    }
-
-    private fun refreshForOrientation() {
-        val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        if (isLandscape && !showing) {
-            addOverlays()
-            showing = true
-        } else if (!isLandscape && showing) {
-            removeOverlays()
-            showing = false
-        }
-    }
-
-    private fun startForegroundNotification() {
-        val channelId = "corner_mask_channel"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId, "Corner Mask",
-                NotificationManager.IMPORTANCE_MIN
-            )
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
-        }
-
-        val openIntent = Intent(this, MainActivity::class.java)
-        val pending = PendingIntent.getActivity(
-            this, 0, openIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val notification = Notification.Builder(this, channelId)
-            .setContentTitle("Corner mask running")
-            .setSmallIcon(android.R.drawable.ic_menu_crop)
-            .setContentIntent(pending)
-            .setOngoing(true)
-            .build()
-
-        startForeground(1, notification)
-    }
-
-    private fun addOverlays() {
-        val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-
-        val type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-
-        val corners = listOf(
-            0 to (Gravity.TOP or Gravity.START),
-            1 to (Gravity.BOTTOM or Gravity.START)
-        )
-
-        for ((cornerId, gravity) in corners) {
-            val view = CornerMaskView(this, cornerId, RADIUS_PX)
-            val lp = WindowManager.LayoutParams(
-                RADIUS_PX, RADIUS_PX,
-                type, flags, PixelFormat.TRANSLUCENT
-            )
-            lp.gravity = gravity
-            wm.addView(view, lp)
-            overlayViews.add(view)
-        }
-    }
-
-    private fun removeOverlays() {
-        for (v in overlayViews) {
-            try { wm.removeView(v) } catch (e: Exception) { }
-        }
-        overlayViews.clear()
-    }
-
-    override fun onDestroy() {
-        removeOverlays()
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
 }
