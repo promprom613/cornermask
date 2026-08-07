@@ -5,32 +5,21 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.view.View
 
 class CornerMaskView(context: Context, private val corner: Int, private val radiusPx: Int) : View(context) {
 
     private val blackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
-    private val clearPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-    }
-
-    init {
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
-    }
 
     override fun onDraw(canvas: Canvas) {
-        val w = width.toFloat()
-        val h = height.toFloat()
         val r = radiusPx.toFloat()
-        canvas.drawRect(0f, 0f, w, h, blackPaint)
-
-        val cx = r
+        val h = height.toFloat()
         val cy = if (corner == 0) r else h - r
 
-        val path = Path()
-        path.addCircle(cx, cy, r, Path.Direction.CW)
-        canvas.drawPath(path, clearPaint)
+        val fullSquare = Path().apply { addRect(0f, 0f, r, h, Path.Direction.CW) }
+        val circle = Path().apply { addCircle(r, cy, r, Path.Direction.CW) }
+        fullSquare.op(circle, Path.Op.DIFFERENCE)
+
+        canvas.drawPath(fullSquare, blackPaint)
     }
 }
