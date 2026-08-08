@@ -85,6 +85,7 @@ class CornerMaskService : Service() {
             type, flags, PixelFormat.TRANSLUCENT
         )
         lp.gravity = gravity
+        lp.alpha = 1.0f
         wm.addView(view, lp)
         overlayViews.add(view)
     }
