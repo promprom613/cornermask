@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">CornerMask</string>
+    <string name="accessibility_service_description">Draws two small black corner masks on screen in landscape only, matching the phone\'s rounded corners. Does not read screen content or track anything.</string>
+</resources>
