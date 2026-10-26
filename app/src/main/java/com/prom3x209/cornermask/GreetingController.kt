@@ -10,6 +10,8 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
 import android.view.inputmethod.InputMethodManager
 import android.widget.RemoteViews
 import java.util.Calendar
@@ -21,31 +23,28 @@ object GreetingController {
 
     private val handler = Handler(Looper.getMainLooper())
     private var seq = 0
-    private var unlocked = true
+    private var inactive = false
     private var currentPkg: String? = null
+    private var lastPlay = 0L
     private var receiver: BroadcastReceiver? = null
 
     fun attach(ctx: Context) {
         if (receiver != null) return
         val app = ctx.applicationContext
-        val km = app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-        unlocked = !km.isKeyguardLocked
+        inactive = !isActive(app)
         val r = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
-                when (i.action) {
-                    Intent.ACTION_SCREEN_OFF -> {
-                        unlocked = false
-                        stop(app)
-                    }
-                    Intent.ACTION_USER_PRESENT -> {
-                        unlocked = true
-                        if (currentPkg == HOME) play(app)
-                    }
+                if (i.action == Intent.ACTION_SCREEN_OFF) {
+                    inactive = true
+                    stop(app)
+                } else {
+                    refresh(app)
                 }
             }
         }
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
         }
         if (Build.VERSION.SDK_INT >= 33) {
@@ -65,9 +64,31 @@ object GreetingController {
         stop(app)
     }
 
+    private fun isActive(ctx: Context): Boolean {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        return pm.isInteractive && !km.isKeyguardLocked
+    }
+
+    // Returns true if the phone is on and unlocked. Handles the moment it becomes active again.
+    private fun refresh(ctx: Context): Boolean {
+        if (!isActive(ctx)) {
+            if (!inactive) {
+                inactive = true
+                stop(ctx)
+            }
+            return false
+        }
+        if (inactive) {
+            inactive = false
+            if (currentPkg == HOME) play(ctx)
+        }
+        return true
+    }
+
     fun onWindowChanged(ctx: Context, pkg: String?) {
-        if (!unlocked || pkg == null) return
         val app = ctx.applicationContext
+        if (!refresh(app) || pkg == null) return
         if (pkg != HOME && pkg in ignored(app)) return
         val wasHome = currentPkg == HOME
         currentPkg = pkg
@@ -94,6 +115,9 @@ object GreetingController {
     }
 
     private fun play(ctx: Context) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPlay < 1200) return
+        lastPlay = now
         val my = ++seq
         handler.removeCallbacksAndMessages(null)
         render(ctx, "")
@@ -118,6 +142,7 @@ object GreetingController {
 
     private fun stop(ctx: Context) {
         seq++
+        lastPlay = 0L
         handler.removeCallbacksAndMessages(null)
         render(ctx, "")
     }
