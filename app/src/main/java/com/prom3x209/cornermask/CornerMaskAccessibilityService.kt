@@ -21,9 +21,14 @@ class CornerMaskAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         showForCurrentOrientation()
+        GreetingController.attach(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val e = event ?: return
+        if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            GreetingController.onWindowChanged(this, e.packageName?.toString())
+        }
     }
 
     override fun onInterrupt() {}
@@ -47,7 +52,6 @@ class CornerMaskAccessibilityService : AccessibilityService() {
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
         val type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-
         val view = CornerMaskView(this, cornerId, RADIUS_PX)
         val lp = WindowManager.LayoutParams(
             RADIUS_PX, RADIUS_PX,
@@ -66,6 +70,7 @@ class CornerMaskAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        GreetingController.detach(this)
         removeOverlays()
         super.onDestroy()
     }
