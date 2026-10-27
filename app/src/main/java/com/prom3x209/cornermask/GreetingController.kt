@@ -115,6 +115,7 @@ object GreetingController {
     }
 
     private fun play(ctx: Context) {
+        AnimTest.cancel()
         val now = SystemClock.elapsedRealtime()
         if (now - lastPlay < 1200) return
         lastPlay = now
@@ -141,18 +142,23 @@ object GreetingController {
     }
 
     private fun stop(ctx: Context) {
+        AnimTest.cancel()
         seq++
         lastPlay = 0L
         handler.removeCallbacksAndMessages(null)
         render(ctx, "")
     }
-
+    fun pause() {
+        seq++
+        handler.removeCallbacksAndMessages(null)
+    }
     fun render(ctx: Context, text: String) {
         val mgr = AppWidgetManager.getInstance(ctx)
         val cn = ComponentName(ctx, GreetingWidget::class.java)
         if (mgr.getAppWidgetIds(cn).isEmpty()) return
         val rv = RemoteViews(ctx.packageName, R.layout.widget_greeting)
         rv.setTextViewText(R.id.greeting_text, text)
+                rv.setOnClickPendingIntent(R.id.root, AnimTest.tapPi(ctx))
         mgr.updateAppWidget(cn, rv)
     }
 }
