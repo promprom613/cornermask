@@ -1,6 +1,7 @@
 package com.prom3x209.cornermask
 
 import android.app.KeyguardManager
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -19,7 +20,10 @@ import java.util.Calendar
 object GreetingController {
     private const val HOME = "fr.neamar.kiss"
     private const val DELAY_MS = 2500L
-    private const val STEP_MS = 450L
+    private const val CHAR_MS = 38L
+    private const val ENTER_MS = 250L
+    private const val BLINK_MS = 500L
+    private const val BLINK_STEPS = 60
 
     private val handler = Handler(Looper.getMainLooper())
     private var seq = 0
@@ -27,6 +31,7 @@ object GreetingController {
     private var currentPkg: String? = null
     private var lastPlay = 0L
     private var receiver: BroadcastReceiver? = null
+    private var termuxPi: PendingIntent? = null
 
     fun attach(ctx: Context) {
         if (receiver != null) return
@@ -34,11 +39,16 @@ object GreetingController {
         inactive = !isActive(app)
         val r = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
-                if (i.action == Intent.ACTION_SCREEN_OFF) {
-                    inactive = true
-                    stop(app)
-                } else {
-                    refresh(app)
+                when (i.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        inactive = true
+                        stop(app)
+                    }
+                    Intent.ACTION_SCREEN_ON -> {
+                        if (inactive) stop(app)
+                        refresh(app)
+                    }
+                    else -> refresh(app)
                 }
             }
         }
@@ -64,13 +74,17 @@ object GreetingController {
         stop(app)
     }
 
+    fun pause() {
+        seq++
+        handler.removeCallbacksAndMessages(null)
+    }
+
     private fun isActive(ctx: Context): Boolean {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
         val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         return pm.isInteractive && !km.isKeyguardLocked
     }
 
-    // Returns true if the phone is on and unlocked. Handles the moment it becomes active again.
     private fun refresh(ctx: Context): Boolean {
         if (!isActive(ctx)) {
             if (!inactive) {
@@ -107,58 +121,88 @@ object GreetingController {
 
     private fun greeting(): String {
         return when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
-            in 5..11 -> "Good morning."
-            in 12..16 -> "Good afternoon."
-            in 17..21 -> "Good evening."
-            else -> "Welcome back, night owl."
+            in 5..11 -> "good morning."
+            in 12..16 -> "good afternoon."
+            in 17..21 -> "good evening."
+            else -> "still up, user?"
         }
     }
 
+    private fun at(my: Int, delayMs: Long, block: () -> Unit) {
+        handler.postDelayed({ if (my == seq) block() }, delayMs)
+    }
+
     private fun play(ctx: Context) {
-        AnimTest.cancel()
         val now = SystemClock.elapsedRealtime()
         if (now - lastPlay < 1200) return
         lastPlay = now
         val my = ++seq
         handler.removeCallbacksAndMessages(null)
         render(ctx, "")
-        val lines = listOf(
-            "[  OK  ] Session resumed",
-            "[  OK  ] Reached target Home",
-            "",
-            greeting()
+
+        val cmds = listOf(
+            "> const user = login();",
+            "> mount(\"/storage\");",
+            "> launcher.start();",
+            "> console.log(greet());"
         )
-        val shown = StringBuilder()
+        val outs = listOf("> welcome back, user.", "> " + greeting())
+
+        // blank warm-up update just before typing starts
+        at(my, DELAY_MS - 150) { render(ctx, "") }
+
         var t = DELAY_MS
-        lines.forEachIndexed { i, line ->
-            if (i > 0) t += STEP_MS
-            handler.postDelayed({
-                if (my != seq) return@postDelayed
-                if (i > 0) shown.append('\n')
-                shown.append(line)
-                render(ctx, shown.toString())
-            }, t)
+        val done = StringBuilder()
+        for (cmd in cmds) {
+            for (k in 1..cmd.length) {
+                val text = done.toString() + cmd.substring(0, k) + "_"
+                at(my, t) { render(ctx, text) }
+                t += CHAR_MS
+            }
+            done.append(cmd).append('\n')
+            t += ENTER_MS
+        }
+
+        // both output lines appear at once, like real output
+        val body = (cmds + outs).joinToString("\n")
+        at(my, t) { render(ctx, body) }
+        t += ENTER_MS
+
+        // final prompt, then the cursor blinks for 30 s and stays solid
+        for (n in 0..BLINK_STEPS) {
+            val on = n % 2 == 0
+            val text = body + "\n> " + (if (on) "_" else " ")
+            at(my, t + n * BLINK_MS) { render(ctx, text) }
         }
     }
 
     private fun stop(ctx: Context) {
-        AnimTest.cancel()
         seq++
         lastPlay = 0L
         handler.removeCallbacksAndMessages(null)
         render(ctx, "")
     }
-    fun pause() {
-        seq++
-        handler.removeCallbacksAndMessages(null)
+
+    private fun termuxIntent(ctx: Context): PendingIntent {
+        termuxPi?.let { return it }
+        val i = Intent(Intent.ACTION_MAIN)
+            .setClassName("com.termux", "com.termux.app.TermuxActivity")
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val pi = PendingIntent.getActivity(
+            ctx, 7, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        termuxPi = pi
+        return pi
     }
+
     fun render(ctx: Context, text: String) {
         val mgr = AppWidgetManager.getInstance(ctx)
-        val cn = ComponentName(ctx, GreetingWidget::class.java)
-        if (mgr.getAppWidgetIds(cn).isEmpty()) return
+        val ids = mgr.getAppWidgetIds(ComponentName(ctx, GreetingWidget::class.java))
+        if (ids.isEmpty()) return
         val rv = RemoteViews(ctx.packageName, R.layout.widget_greeting)
         rv.setTextViewText(R.id.greeting_text, text)
-                rv.setOnClickPendingIntent(R.id.root, AnimTest.tapPi(ctx))
-        mgr.updateAppWidget(cn, rv)
+        rv.setOnClickPendingIntent(R.id.greeting_text, termuxIntent(ctx))
+        mgr.updateAppWidget(ids, rv)
     }
 }
