@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -18,7 +19,7 @@ import android.widget.RemoteViews
 import java.util.Calendar
 
 object GreetingController {
-    private const val HOME = "fr.neamar.kiss"
+    private const val KISS_PREFIX = "fr.neamar.kiss"
     private const val DELAY_MS = 2500L
     private const val CHAR_MS = 38L
     private const val ENTER_MS = 250L
@@ -95,7 +96,7 @@ object GreetingController {
         }
         if (inactive) {
             inactive = false
-            if (currentPkg == HOME) play(ctx)
+            if (isHome(ctx, currentPkg)) play(ctx)
         }
         return true
     }
@@ -103,13 +104,27 @@ object GreetingController {
     fun onWindowChanged(ctx: Context, pkg: String?) {
         val app = ctx.applicationContext
         if (!refresh(app) || pkg == null) return
-        if (pkg != HOME && pkg in ignored(app)) return
-        val wasHome = currentPkg == HOME
+        val nowHome = isHome(app, pkg)
+        if (!nowHome && pkg in ignored(app)) return
+        val wasHome = isHome(app, currentPkg)
         currentPkg = pkg
-        if (pkg == HOME) {
+        if (nowHome) {
             if (!wasHome) play(app)
         } else if (wasHome) {
             stop(app)
+        }
+    }
+
+    // true for the default launcher (works for any KISS fork/package name) or any KISS package
+    private fun isHome(ctx: Context, pkg: String?): Boolean {
+        if (pkg == null) return false
+        if (pkg.startsWith(KISS_PREFIX)) return true
+        return try {
+            val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            val ri = ctx.packageManager.resolveActivity(i, PackageManager.MATCH_DEFAULT_ONLY)
+            ri?.activityInfo?.packageName == pkg
+        } catch (e: Exception) {
+            false
         }
     }
 
